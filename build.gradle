@@ -1,0 +1,70 @@
+apply plugin: 'java'
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+  testCompile 'junit:junit:4.12'
+}
+
+task headers(type:Exec) {
+	description 'Generates JNI .h header files'
+	
+	ext.destFile = file('src/jni/cpp/com_gmail_etordera_jcms_JCMS.h')
+	inputs.file file('src/main/java/com/gmail/etordera/jcms/JCMS.java')
+	outputs.file destFile
+	
+	commandLine 'javah', '-classpath', 'src/main/java', '-d', 'src/jni/cpp', 'com.gmail.etordera.jcms.JCMS'
+}
+
+task jni(type:Exec) {
+	description 'Compiles JNI shared object which will allow access to native libraries.'
+	dependsOn headers
+
+	def jdk_home = ant.properties['java.home']+'/..'
+	
+	def osArch = ant.properties['os.arch']
+	def libArch = '32'
+	if (osArch.contains('64')) {
+		libArch = '64';
+	}
+
+	def osName = ant.properties['os.name'].toLowerCase()
+	def libOs = ''
+	def libPrefix = 'lib'
+	def libSuffix = '.so'
+	ext.compilerFlags = '-fPIC'
+	ext.compilerInclude = '-I'+jdk_home+'/include'
+	if (osName.contains('linux')) {
+		libOs = 'linux'
+	} else if (osName.contains("windows")) {
+		libOs = "windows";
+		libPrefix = "";
+		libSuffix = ".dll";
+		compilerFlags = '-Wl,--add-stdcall-alias'
+		compilerInclude += ' -I'+jdk_home+'/include/win'+libArch
+	} else if (osName.contains("mac") || osName.contains("darwin")) {
+		libOs = "mac";
+	}
+			
+	ext.libMainDir = 'src/main/resources/com/gmail/etordera/jcms/lib'
+	def libDir = libMainDir+'/'+libOs+libArch
+	ext.libPath = libDir+'/'+libPrefix+'jcms'+libSuffix
+
+	inputs.dir 'src/jni/cpp'
+	outputs.file file(libPath)
+
+	doFirst {
+		new File(libDir).mkdirs()
+	}
+
+	commandLine 'g++', compilerFlags, '-shared', '-o', libPath, compilerInclude, 'src/jni/cpp/jcms.cpp', '-llcms2'
+}
+
+tasks.processResources.dependsOn jni
+
+clean {
+	delete headers.destFile
+	delete jni.libMainDir
+}
