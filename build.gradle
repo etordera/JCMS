@@ -1,5 +1,9 @@
 apply plugin: 'java'
 
+tasks.withType(JavaCompile) {
+	options.encoding = 'UTF-8'
+}
+
 repositories {
 	mavenCentral()
 }
@@ -15,7 +19,7 @@ task headers(type:Exec) {
 	inputs.file file('src/main/java/com/gmail/etordera/jcms/JCMS.java')
 	outputs.file destFile
 	
-	commandLine 'javah', '-classpath', 'src/main/java', '-d', 'src/jni/cpp', 'com.gmail.etordera.jcms.JCMS'
+	commandLine 'javah', '-J-Dfile.encoding=UTF-8', '-classpath', 'src/main/java', '-d', 'src/jni/cpp', 'com.gmail.etordera.jcms.JCMS'
 }
 
 task jni(type:Exec) {
@@ -36,6 +40,7 @@ task jni(type:Exec) {
 	def libSuffix = '.so'
 	ext.compilerFlags = '-fPIC'
 	ext.compilerInclude = '-I'+jdk_home+'/include'
+	ext.compilerInclude2 = ''
 	if (osName.contains('linux')) {
 		libOs = 'linux'
 	} else if (osName.contains("windows")) {
@@ -43,7 +48,7 @@ task jni(type:Exec) {
 		libPrefix = "";
 		libSuffix = ".dll";
 		compilerFlags = '-Wl,--add-stdcall-alias'
-		compilerInclude += ' -I'+jdk_home+'/include/win'+libArch
+		compilerInclude2 = '-I'+jdk_home+'/include/win32'
 	} else if (osName.contains("mac") || osName.contains("darwin")) {
 		libOs = "mac";
 	}
@@ -59,7 +64,18 @@ task jni(type:Exec) {
 		new File(libDir).mkdirs()
 	}
 
-	commandLine 'g++', compilerFlags, '-shared', '-o', libPath, compilerInclude, 'src/jni/cpp/jcms.cpp', '-llcms2'
+	//commandLine 'g++', compilerFlags, '-shared', '-o', libPath, compilerInclude, 'src/jni/cpp/jcms.cpp', '-llcms2'
+	executable 'g++'
+	args compilerFlags
+	args '-shared'
+	args '-o'
+	args libPath
+	args compilerInclude
+	if (!compilerInclude2.equals('')) {
+		args compilerInclude2
+	}	
+	args 'src/jni/cpp/jcms.cpp'
+	args '-llcms2'	
 }
 
 tasks.processResources.dependsOn jni
