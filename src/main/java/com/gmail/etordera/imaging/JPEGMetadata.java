@@ -24,7 +24,7 @@ import javax.xml.xpath.XPathFactory;
 import org.w3c.dom.Node;
 
 /**
- * Per obtenir metadata d'imatges JPEG
+ * Gets metadata from JPEG images.
  * 
  * @author enric
  *
@@ -587,11 +587,12 @@ public class JPEGMetadata {
 	}
 	
 	/**
-	 * Funció auxiliar per a llegir dades Exif
+	 * Helper function for reading Exif data.<br>
+	 * Reads a word value from a memory buffer.
 	 * 
-	 * @param buffer
-	 * @param littleEndian
-	 * @return
+	 * @param buffer Memory buffer to read
+	 * @param littleEndian <code>true</code> if buffer is little endian encoded
+	 * @return Word value
 	 */
 	long exifReadWord(byte[] buffer, boolean littleEndian) {
 		if (littleEndian) {
@@ -602,11 +603,12 @@ public class JPEGMetadata {
 	}
 
 	/**
-	 * Funció auxiliar per a llegir dades Exif
+	 * Helper function for reading Exif data.<br>
+	 * Reads a long value from a memory buffer.
 	 * 
-	 * @param buffer
-	 * @param littleEndian
-	 * @return
+	 * @param buffer Memory buffer to read
+	 * @param littleEndian <code>true</code> if buffer is little endian encoded
+	 * @return Long value
 	 */
 	long exifReadLong(byte[] buffer, boolean littleEndian) {
 		if (littleEndian) {
@@ -618,11 +620,13 @@ public class JPEGMetadata {
 	}
 
 	/**
-	 * Funció auxiliar per a llegir dades Exif
+	 * Helper function for reading Exif values.
 	 * 
-	 * @param buffer
-	 * @param littleEndian
-	 * @return
+	 * @param buffer Data buffer where Exif value is stored
+	 * @param littleEndian <code>true</code> if buffer is little endian encoded
+	 * @param typeL Exif data type id
+	 * @param sizeL Exif data length
+	 * @return Exif value
 	 */
 	long exifReadValue(byte[] buffer, boolean littleEndian, long typeL, long sizeL) {
 
@@ -708,16 +712,18 @@ public class JPEGMetadata {
 	}
 	
 	/**
-	 * Orientació de la imatge
-	 * @return
+	 * Get image orientation.
+	 * 
+	 * @return Image orientation Exif value
 	 */
 	public long getOrientation() {
 		return m_orientation;
 	}
 
 	/**
-	 * Espai de color Exif
-	 * @return
+	 * Get Exif color space.
+	 * 
+	 * @return Exif color space id (JPEGMetadata.EXIF_CS*)
 	 */
 	public long getExifColorSpace() {
 		return m_exifColorSpace;

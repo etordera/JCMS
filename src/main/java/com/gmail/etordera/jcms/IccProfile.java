@@ -143,7 +143,7 @@ public class IccProfile {
 	/**
 	 * Loads an ICC Profile from a memory buffer.
 	 * 
-	 * @param file ICC Profile file
+	 * @param data ICC Profile data buffer
 	 * @return <code>true</code> if loaded correctly, <code>false</code> otherwise
 	 */
 	public boolean loadFromMem(byte[] data) {

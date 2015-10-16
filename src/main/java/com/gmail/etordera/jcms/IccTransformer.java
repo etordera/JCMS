@@ -337,7 +337,9 @@ public class IccTransformer {
 	 * If it is set to <code>false</code>, default input profiles are used instead of embedded profiles.
 	 * 
 	 * @param useEmbeddedProfiles <code>true</code> to use embedded profiles, <code>false</code> to force use of default profiles
-	 * @see {@link #setDefaultRGB(ICC_Profile)}, {@link #setDefaultCMYK(ICC_Profile)}, {@link #setDefaultGray(ICC_Profile)}
+	 * @see #setDefaultRGB(ICC_Profile)
+	 * @see #setDefaultCMYK(ICC_Profile)
+	 * @see #setDefaultGray(ICC_Profile)
 	 */
 	public void setUseEmbeddedProfiles(boolean useEmbeddedProfiles) {
 		m_useEmbeddedProfiles = useEmbeddedProfiles;

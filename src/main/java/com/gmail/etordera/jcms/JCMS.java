@@ -379,7 +379,7 @@ public class JCMS {
 	 * Creates a gray profile based on D50 white point and custom gamma.
 	 * 
 	 * @param gamma Gamma value that defines the transfer function of the gray profile.
-	 * @return
+	 * @return A handle to an ICC profile object on success, <code>0</code> on error
 	 */
 	public static native long cmsCreateGrayProfile(double gamma);
 }
