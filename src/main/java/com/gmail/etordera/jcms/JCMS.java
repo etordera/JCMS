@@ -1,9 +1,18 @@
 package com.gmail.etordera.jcms;
 
 import java.io.File;
+import java.io.FilenameFilter;
 import java.io.InputStream;
+import java.net.URL;
+import java.net.URLDecoder;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.util.Arrays;
+import java.util.Enumeration;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
 
 /**
  * Utility class for the JavaCMS library.<br>
@@ -22,50 +31,47 @@ public class JCMS {
 			
 		} catch (UnsatisfiedLinkError e) {
 			
-			// Try to load library from inside jar
-			
-			// Detect shared object path for current OS and architecture
-			String soPath = detectSharedObjectPath();
-			
-			try {
-				// Extract shared object to temp file
-				InputStream in = JCMS.class.getResourceAsStream("/com/gmail/etordera/jcms/lib/"+soPath);
-				File tempFile = File.createTempFile("jcms", ".so");
-				Files.copy(in, tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
-				in.close();
+			// Try to load libraries from classpath resources
+			String basePath = "com/gmail/etordera/jcms/lib/"+getPlatform();
+			String[] libs = getResourceSharedObjects(basePath);
+			Arrays.sort(libs);	// Alphabetical order of shared objects determines loading order (dependency management)
+			for (String lib : libs) {
+				try {
+					// Extract shared object to temp file
+					InputStream in = JCMS.class.getClassLoader().getResourceAsStream(basePath+"/"+lib);
+					File tempFile = File.createTempFile("jcms-library", ".so");
+					Files.copy(in, tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+					in.close();
 
-				// Load library from temp file
-				System.load(tempFile.getAbsolutePath());
+					// Load library from temp file
+					System.load(tempFile.getAbsolutePath());
 
-				// Mark temp file for removal on exit
-				tempFile.deleteOnExit();
+					// Mark temp file for removal on exit
+					tempFile.deleteOnExit();
 
-			} catch (Exception ex) {
-				throw new UnsatisfiedLinkError("Failed to load JCMS native library.");
+				} catch (Exception ex) {
+					throw new UnsatisfiedLinkError("Failed to load JCMS native library.");
+				}				
 			}
 			
 		}
 	}
-
+	
 	/**
-	 * Detect location of shared object / dll for JNI access to LittleCMS library.<br>
-	 * Dependent on OS and architecture.
+	 * Gets a string identifier of the runtime platform (OS name and architecture).<br>
+	 * Examples: <code>windows32</code>, <code>linux64</code>
 	 * 
-	 * @return relative path to location of shared object / dll for running OS and architecture.
+	 * @return A string identifier for runtime platform.
 	 */
-	private static String detectSharedObjectPath() {
+	private static String getPlatform() {
 		String osName = System.getProperty("os.name").toLowerCase();
 		String osArch = System.getProperty("os.arch");
 		
 		String libOs = "";
-		String libPrefix = "lib";
-		String libSuffix = ".so";
 		if (osName.contains("linux")) {
 			libOs = "linux";
 		} else if (osName.contains("windows")) {
 			libOs = "windows";
-			libPrefix = "";
-			libSuffix = ".dll";
 		} else if (osName.contains("mac") || osName.contains("darwin")) {
 			libOs = "mac";
 		}
@@ -75,8 +81,65 @@ public class JCMS {
 			libArch = "64";
 		}
 		
-		return libOs+libArch+"/"+libPrefix+"jcms"+libSuffix;
+		return libOs+libArch;
 	}
+	
+	/**
+	 * Gets a listing of all shared object files (.dll and .so) found in a path
+	 * inside the current classpath.
+	 * 
+	 * @param path Absolute path inside the classpath where to look for shared object files (without leading slash)
+	 * @return A list of names of all shared object files (can be empty, never <code>null</code>)
+	 */
+	private static String[] getResourceSharedObjects(String path) {
+		String[] listing = new String[] {};
+		
+		try {
+			URL dirURL = JCMS.class.getClassLoader().getResource(path);
+			if (dirURL != null && dirURL.getProtocol().equals("file")) {
+				File dir = new File(dirURL.toURI());
+				listing = dir.list(new FilenameFilter() {
+					public boolean accept(File dir, String name) {
+						return name.toLowerCase().matches(".*\\.(so|dll)");
+					}					
+				});
+			} 
+			
+			if (dirURL == null) {
+				String me = JCMS.class.getName().replace(".", "/")+".class";
+				dirURL = JCMS.class.getClassLoader().getResource(me);
+			}
+			  
+			if (dirURL.getProtocol().equals("jar")) {
+				String jarPath = dirURL.getPath().substring(5, dirURL.getPath().indexOf("!"));
+				JarFile jar = new JarFile(URLDecoder.decode(jarPath, "UTF-8"));
+				Enumeration<JarEntry> entries = jar.entries();
+				Set<String> result = new HashSet<String>();
+				while (entries.hasMoreElements()) {
+				  String name = entries.nextElement().getName();
+				  if (name.startsWith(path)) {
+				    String entry = name.substring(path.length());
+				    int checkSubdir = entry.indexOf("/");
+				    if (checkSubdir >= 0) {
+				      entry = entry.substring(0, checkSubdir);
+				    }
+				    if (entry.toLowerCase().matches(".*\\.(so|dll)")) {
+				    	result.add(entry);
+				    }
+				  }
+				}
+				jar.close();
+				listing = result.toArray(new String[result.size()]);
+			} 
+				    	  
+		} catch (Exception e) {
+			System.err.println("Error while listing shared object resources: "+e.getMessage());
+		}
+		
+		return listing;
+	}
+	
+	
 	
 	// ---------------------------------------------------------------
 	// Constants: Rendering intents for color transformations
