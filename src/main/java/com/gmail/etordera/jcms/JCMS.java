@@ -2,14 +2,19 @@ package com.gmail.etordera.jcms;
 
 import java.io.File;
 import java.io.FilenameFilter;
+import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Arrays;
 import java.util.Enumeration;
 import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
@@ -31,30 +36,73 @@ public class JCMS {
 			
 		} catch (UnsatisfiedLinkError e) {
 			
-			// Try to load libraries from classpath resources
+			// Get libraries from classpath resources
 			String basePath = "com/gmail/etordera/jcms/lib/"+getPlatform();
 			String[] libs = getResourceSharedObjects(basePath);
-			Arrays.sort(libs);	// Alphabetical order of shared objects determines loading order (dependency management)
-			for (String lib : libs) {
-				try {
-					// Extract shared object to temp file
-					InputStream in = JCMS.class.getClassLoader().getResourceAsStream(basePath+"/"+lib);
-					File tempFile = File.createTempFile("jcms-library", ".so");
-					Files.copy(in, tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
-					in.close();
 
-					// Load library from temp file
-					System.load(tempFile.getAbsolutePath());
+			try {
+				// Prepare temp directory for extracted resources
+				Path tempDir = Files.createTempDirectory("jcmstmp");
+				tempDir.toFile().deleteOnExit();
+				
+				// Try to load libraries from classpath resources
+				if (!loadSharedObjects(basePath, new LinkedList<String>(Arrays.asList(libs)), tempDir)) {
+					throw new UnsatisfiedLinkError("Failed to load JCMS native libraries.");
+				}
 
-					// Mark temp file for removal on exit
-					tempFile.deleteOnExit();
-
-				} catch (Exception ex) {
-					throw new UnsatisfiedLinkError("Failed to load JCMS native library.");
-				}				
+			} catch (IOException ioex) {
+				throw new UnsatisfiedLinkError("Failed to load JCMS native library ("+ioex.getMessage()+")");
 			}
+
 			
 		}
+	}
+		
+	/**
+	 * Extracts shared objects from classpath and loads them, taking care of order loading dependencies.
+	 * 
+	 * @param basePath Base path in classpath where shared objects are stored
+	 * @param soNames Names of shared objects to load from classpath
+	 * @param tempDir Temporary directory to be used for extraction
+	 * @return <code>true</code> on success, <code>false</code> on error
+	 */
+	private static boolean loadSharedObjects(String basePath, List<String> soNames, Path tempDir) {
+		Iterator<String> it = soNames.iterator();
+		boolean someFailed = false;
+		boolean someLoaded = false;
+		while (it.hasNext()) {
+			String soName = it.next();
+			try {
+				// Extract shared object to temp file
+				InputStream in = JCMS.class.getClassLoader().getResourceAsStream(basePath+"/"+soName);
+				File tempFile = new File(tempDir.toFile().getAbsolutePath()+"/"+soName);
+				Files.copy(in, tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+				in.close();
+
+				// Load library from temp file
+				System.load(tempFile.getAbsolutePath());
+
+				// Mark temp file for removal on exit
+				tempFile.deleteOnExit();
+
+				// Delete from list
+				it.remove();
+				
+				// Register success
+				someLoaded = true;
+				
+			} catch (Exception ex) {
+				// Register fail
+				someFailed = true;
+			}				
+		}
+		
+		// Recursive call manages loading order dependencies
+		if (someLoaded && someFailed) {
+			return loadSharedObjects(basePath, soNames, tempDir);
+		}
+		
+		return someLoaded;
 	}
 	
 	/**
