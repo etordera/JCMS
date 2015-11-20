@@ -4,6 +4,8 @@ import java.io.File;
 import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.Runtime;
+import java.lang.Throwable;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.file.Files;
@@ -28,6 +30,9 @@ import java.util.jar.JarFile;
  */
 public class JCMS {
 
+	/** Path to temp dir where native libraries are extracted to during runtime */
+	private static String m_tempDir = null;
+
 	// Ensure loading of shared object / dll for JNI access to LittleCMS library
 	static {
 		try {
@@ -43,8 +48,28 @@ public class JCMS {
 			try {
 				// Prepare temp directory for extracted resources
 				Path tempDir = Files.createTempDirectory("jcmstmp");
+				m_tempDir = tempDir.toFile().getAbsolutePath();
 				tempDir.toFile().deleteOnExit();
 				
+				// Windows: Make sure temp dir is deleted on JVM exit
+				if (getPlatform().contains("windows")) {
+					Runtime.getRuntime().addShutdownHook(new Thread() {
+						public void run() {
+							try {
+								String[] cmdArray = {
+										"cmd", "/c", "ping", "-n", "5", "127.0.0.1",
+										"&", "cmd", "/c", "del", m_tempDir+"\\*.dll",
+										"&", "cmd", "/c", "rmdir", m_tempDir
+								};
+								Runtime.getRuntime().exec(cmdArray);
+								
+							} catch (IOException e) {
+								System.out.println("IOException: "+e.getMessage());
+							}
+						}
+					});					
+				}
+							
 				// Try to load libraries from classpath resources
 				if (!loadSharedObjects(basePath, new LinkedList<String>(Arrays.asList(libs)), tempDir)) {
 					throw new UnsatisfiedLinkError("Failed to load JCMS native libraries.");
@@ -52,9 +77,7 @@ public class JCMS {
 
 			} catch (IOException ioex) {
 				throw new UnsatisfiedLinkError("Failed to load JCMS native library ("+ioex.getMessage()+")");
-			}
-
-			
+			}			
 		}
 	}
 		
@@ -82,16 +105,16 @@ public class JCMS {
 				// Load library from temp file
 				System.load(tempFile.getAbsolutePath());
 
-				// Mark temp file for removal on exit
+				// Register temp file deletion
 				tempFile.deleteOnExit();
-
+				
 				// Delete from list
 				it.remove();
 				
 				// Register success
 				someLoaded = true;
 				
-			} catch (Exception ex) {
+			} catch (Throwable t) {
 				// Register fail
 				someFailed = true;
 			}				
