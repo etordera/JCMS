@@ -31,26 +31,26 @@ import org.w3c.dom.Node;
  */
 public class JPEGMetadata {
 
-	/** Nom del fitxer JPEG */
+	/** JPEG file name */
 	private String m_filename;
-	/** Activar/Desactivar registres */
+	/** Enable or disable logging */
 	private boolean m_logging;
 	
-	/** Metadata: Orientació de la imatge */
+	/** Metadata: Image orientation */
 	private long m_orientation = 0;
-	/** Metadata: Espai de color EXIF */
+	/** Metadata: EXIF color space tag */
 	private long m_exifColorSpace = 0;
 	/** <code>true</code> only if Adobe APP14 JPEG segment was found */
 	private boolean m_adobeApp14Found = false;
 	/** Metadata: Adobe color transform code */
 	private int m_adobeTransform = ADOBE_TRANSFORM_UNKNOWN;
-	/** Metadata: offset del thumbnail dins del fitxer JPEG */ 
+	/** Metadata: Thumbnail offset */ 
 	private long m_thumbPos = 0;
-	/** Metadata: Mida del thumbnail */
+	/** Metadata: Thumbnail size in bytes */
 	private long m_thumbSize = 0;
-	/** Metadata: offsets dels fragments del perfil ICC dins del fitxer JPEG */ 
+	/** Metadata: ICC profile fragments offsets */ 
 	private Vector<Long> m_iccPositions = null;
-	/** Metadata: mides dels fragments del perfil ICC dins del fitxer JPEG */ 
+	/** Metadata: ICC profile fragments sizes */ 
 	private Vector<Long> m_iccSizes = null;
 
 	/* Adobe Constants */
@@ -69,7 +69,7 @@ public class JPEGMetadata {
 	/** ID for unknown Exif color space */
 	public static final int EXIF_CS_UNKNOWN = 0xFFFF;
 	
-	/* Constants JPEG */
+	/* JPEG Constants */
 	private static final byte JPEG_MARKER_APP0  = (byte)0xE0;
 	private static final byte JPEG_MARKER_APP1  = (byte)0xE1;
 	private static final byte JPEG_MARKER_APP2  = (byte)0xE2;
@@ -97,19 +97,19 @@ public class JPEGMetadata {
 	//private static final byte JFXX_TAG[] = {'J','F','X','X',0};
 		
 	/**
-	 * Construeix un objecte JPEGMetadata amb la informació del fitxer JPEG.
+	 * Builds a JPEGMetadata object with data from a JPEG file
 	 * 
-	 * @param filename Path al fitxer JPEG
+	 * @param filename JPEG file path
 	 */
 	public JPEGMetadata(String filename) {
 		this(filename, false);
 	}
 
 	/**
-	 * Construeix un objecte JPEGMetadata amb la informació del fitxer JPEG.
+	 * Builds a JPEGMetadata object with data from a JPEG file.
 	 * 
-	 * @param filename Path al fitxer JPEG
-	 * @param logging Activar registre de missatges de depuració
+	 * @param filename JPEG file path
+	 * @param logging if <code>true</code>, enables output of debug messages
 	 */
 	public JPEGMetadata(String filename, boolean logging) {
 		m_logging = logging;
@@ -119,9 +119,10 @@ public class JPEGMetadata {
 
 	
 	/**
-	 * Guarda la miniatura del JPEG en un fitxer
-	 * @param thumbnail Path al fitxer a generar amb la miniatura
-	 * @return true si tenim èxit, false en cas contrari
+	 * Saves JPEG thumbnail to file.
+	 * 
+	 * @param thumbnail Path to output thumbnail file
+	 * @return <code>true</code> on succes, <code>false</code> on error
 	 */
 	public boolean saveThumbnail(String thumbnail) {
 		if (m_thumbPos!=0 && m_thumbSize!=0) {
@@ -145,8 +146,9 @@ public class JPEGMetadata {
 	}
 	
 	/**
-	 * Genera un InputStream per a accedir a la miniatura.
-	 * @return un ByteArrayInputStream amb les dades de la miniatura, o null si no és possible carregar-la
+	 * Gets an <code>InputStream</code> from where thumbnail can be read.
+	 * 
+	 * @return thumbnail data, or <code>null</code> if unable to load.
 	 */
 	public ByteArrayInputStream getThumbnailAsInputStream() {
 		if (m_thumbPos!=0 && m_thumbSize!=0) {
@@ -168,9 +170,9 @@ public class JPEGMetadata {
 	}
 	
 	/**
-	 * Indica si s'ha pogut llegir informació de la miniatura
+	 * Check if embedded thumbnail could be read
 	 * 
-	 * @return true si tenim miniatura disponible, false en cas contrari
+	 * @return <code>true</code> if thumbnail was found and is available, <code>false</code> if not
 	 */
 	public boolean hasThumbnail() {
 		return (m_thumbPos!=0 && m_thumbSize!=0);
@@ -194,7 +196,7 @@ public class JPEGMetadata {
 		try {
 			FileInputStream fis = new FileInputStream(m_filename);
 			
-			// Llegim marcador d'inici
+			// Read start marker
 			if (fis.read(buffer,0,2) != 2) {
 				log("* First read error");
 				fis.close();
@@ -206,7 +208,7 @@ public class JPEGMetadata {
 				return;
 			}
 
-			// Detectem marcadors
+			// Detect markers
 			long markerLength;
 			long markerStart;
 			int appid;
@@ -247,7 +249,7 @@ public class JPEGMetadata {
 							long exifStart;
 							exifStart = fis.getChannel().position();
 							log("- Exif data found");
-							// Llegim capçalera TIFF
+							// Read TIFF header
 							if (fis.read(buffer,0,8) != 8) {
 								log("EXIF TIFF Header read error");
 								fis.close();
@@ -265,7 +267,7 @@ public class JPEGMetadata {
 							long offsetIFD0 =  exifReadLong(subArray(buffer,4,8),littleEndian);
 							log("Tag 42: "+tag42+" - Offset to IFD0: "+offsetIFD0);
 
-							// Llegim paràmetres TIFF (IFD0)
+							// Read TIFF parameters (IFD0)
 							fis.getChannel().position(exifStart+offsetIFD0);
 							if (fis.read(buffer,0,2) != 2) {
 								log("EXIF IFD0 read error");
@@ -298,7 +300,7 @@ public class JPEGMetadata {
 									primariesOffset = exifValueOffset;
 								}
 							}
-							// Llegim offset a IFD1
+							// Read IFD1 offset
 							if (fis.read(buffer,0,4) != 4) {
 								log("EXIF IFD1 offset read error");
 								fis.close();
@@ -308,7 +310,7 @@ public class JPEGMetadata {
 							IFD1offset = exifReadLong(buffer,littleEndian);
 							log("- Offset to IFD1: "+IFD1offset);
 
-							// Llegim paràmetres EXIF
+							// Read EXIF parameters
 							if (exifIFDoffset != 0) {
 								fis.getChannel().position(exifStart+exifIFDoffset);
 								if (fis.read(buffer,0,2) != 2) {
@@ -377,7 +379,7 @@ public class JPEGMetadata {
                                 }					
 							}
 							
-							// Llegim informació del thumbnail (IFD1)
+							// Read thumbnail data (IFD1)
 							if (IFD1offset != 0) {
 								fis.getChannel().position(exifStart+IFD1offset);
 								if (fis.read(buffer,0,2) != 2) {
@@ -493,7 +495,7 @@ public class JPEGMetadata {
 				}
 			}
 			
-			// Tanquem el fitxer
+			// Close file
 			fis.close();
 						
 		} catch (Exception e) {
@@ -505,13 +507,13 @@ public class JPEGMetadata {
 	
 	
 	/**
-	 * Devuelve el perfil de color incrustado en los metadatos de la imagen JPEG.
+	 * Gets embedded ICC color profile.
 	 * 
-	 * @return Perfil de color incrustado, o <code>null</code> si no se ha detectado.
+	 * @return Embedded ICC color profile, or <code>null</code> if not detected.
 	 */
 	public ICC_Profile getIccProfile() {
 		
-		// Comprobamos inicializaciones correctas
+		// Check initializations
 		if ((m_iccPositions == null) || (m_iccSizes == null)) {
 			System.err.println("Metadatos no cargados");
 			return null;
@@ -520,14 +522,14 @@ public class JPEGMetadata {
 			return null;
 		}
 		
-		// Preparamos buffer para el perfil de color
+		// Prepare buffer for color profile
 		long profileSize = 0;
 		for (long chunkSize : m_iccSizes) {
 			profileSize += chunkSize;
 		}
 		byte[] profileData = new byte[(int)profileSize];
 
-		// Cargamos segmentos del perfil en el buffer
+		// Load profile segments into buffer
 		FileInputStream is = null;
 		int currentPosition = 0;
 		try {
@@ -551,7 +553,7 @@ public class JPEGMetadata {
 			return null;
 		}
 		
-		// Cargamos perfil a partir del buffer
+		// Load profile from buffer
 		ICC_Profile profile = null;
 		try {
 			profile = ICC_Profile.getInstance(profileData);
@@ -564,12 +566,12 @@ public class JPEGMetadata {
 	}
 	
 	/**
-	 * Compara dos arrays de bytes.
+	 * Compares two byte arrays
 	 * 
 	 * @param src Array 1
 	 * @param dst Array 2
-	 * @param length Longitud de bytes a comparar
-	 * @return 0 si són iguals, 1 si són diferents
+	 * @param length Length of bytes to compare
+	 * @return <code>0</code> if equal, <code>1</code> if different
 	 */
 	private static int memcmp(byte[] src, byte[] dst, int length) {
 		boolean result = false;
@@ -634,7 +636,7 @@ public class JPEGMetadata {
 		int type = (int) typeL;
 		int size = (int) sizeL;
 
-		// Calculem dimensions de les dades en bytes
+		// Get data size in bytes
 		int totalsize;
 		switch (type) {
 			case 1:	//BYTE
@@ -653,7 +655,7 @@ public class JPEGMetadata {
 		}
 		if (totalsize >=4) totalsize=4;
 
-		// Obtenim les dades sobre els bytes que correspon
+		// Get data on corresponding bytes
 		switch (totalsize) {
 			case 1:
 				value = (0xFF & buffer[0]);
@@ -680,14 +682,14 @@ public class JPEGMetadata {
 	}
 
 	/**
-	 * Genera un subarray a partir d'un array de bytes
+	 * Generates a sub-array from a byte array
 	 * 
-	 * @param buffer Array de bytes original
-	 * @param start Índex a partir del qual s'extreuen les dades
-	 * @param end Índex fins al qual s'extreuen les dades
-	 * @return Nou array de bytes
+	 * @param buffer Original byte array
+	 * @param start Start index for sub-array
+	 * @param end End index for sub-array
+	 * @return New sub-array, of length <code>end-start</code>
 	 */
-	private byte[] subArray(byte[] buffer,int start, int end) {
+	private byte[] subArray(byte[] buffer, int start, int end) {
 		int newLength = end-start;
 		byte[] newBuffer = new byte[newLength];
 		for (int i=0; i<newLength; i++) {
@@ -701,9 +703,9 @@ public class JPEGMetadata {
 	}
 	
 	/**
-	 * Registre de missatges per a depuració
+	 * Logs to console a debug message
 	 * 
-	 * @param msg Missatge
+	 * @param msg Message to log
 	 */
 	private void log(String msg) {
 		if (m_logging) {
@@ -730,7 +732,7 @@ public class JPEGMetadata {
 	}
 
 	/**
-	 * Gets Adobe Color Transform ID. It tells if channel data is direct RGB/CMYK, YCbCr or YCCK.
+	 * Gets Adobe Color Transform ID. Tells if channel data is direct RGB/CMYK, YCbCr or YCCK.
 	 * 
 	 * @return Adobe Color Transform ID (<code>JPEGMetadata.ADOBE_TRANSFORM_*</code>)
 	 */
@@ -749,10 +751,20 @@ public class JPEGMetadata {
 		return  m_adobeApp14Found;
 	}
 	
+	/**
+	 * Check if debug logging is enabled.
+	 * 
+	 * @return <code>true</code> if debug logging is enabled, <code>false</code> otherwise
+	 */
 	public boolean isLogging() {
 		return m_logging;
 	}
 
+	/**
+	 * Set debug logging status
+	 * 
+	 * @param logging <code>true</code> for enabling debug loggin, <code>false</code> to disable
+	 */
 	public void setLogging(boolean logging) {
 		m_logging = logging;
 	}
@@ -760,11 +772,10 @@ public class JPEGMetadata {
 	
 	
 	/**
-	 * Devuelve las dimensiones en píxeles de un archivo de imagen, sin necesidad de cargar
-	 * la imagen completamente en memoria.
+	 * Gets pixel size of an image file, without having to load image into memory.
 	 * 
-	 * @param jpegFile Fichero de imagen a analizar
-	 * @return Dimensiones de la imagen. Si no es posible extraer la información del fichero, devuelve (0,0)
+	 * @param jpegFile Image file
+	 * @return Image pixel dimensions, or <code>(0,0)</code> if not able to read.
 	 */
 	public static Dimension getPixelSize(File jpegFile) {
 		Dimension dimension = null;
