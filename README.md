@@ -1,5 +1,6 @@
 # Java Color Management System (JCMS)
 A Java library for easy management of ICC color transformations. It is basically a wrapper of [LittleCMS](http://www.littlecms.com) C library, with some helper classes.
+Check [JCMS website](http://etordera.github.io/JCMS) for more information.
 
 *by Enric Tordera (etordera at gmail dot com)*
 
@@ -14,6 +15,10 @@ Once prerequisites are met, launch the build with:
     gradle build
     
 This will generate the library as **JCMS.jar** inside *build/libs* directory.
+
+## Javadoc
+
+For detailed information on the classes of JCMS consult the [javadoc](http://etordera.github.io/JCMS/javadoc/index.html).
 
 ## License
 
