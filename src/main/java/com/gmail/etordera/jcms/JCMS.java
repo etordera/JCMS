@@ -431,7 +431,7 @@ public class JCMS {
 	// ---------------------------------------------------------------
 	
 	/**
-	 * Opens a file‐based ICC profile returning a handle to it.
+	 * Opens a file-based ICC profile returning a handle to it.
 	 * 
 	 * @param filename File name with full path
 	 * @param mode "r" for normal operation, "w" for profile creation
