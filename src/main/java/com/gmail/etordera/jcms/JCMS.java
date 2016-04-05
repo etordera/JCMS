@@ -191,8 +191,8 @@ public class JCMS {
 				  if (name.startsWith(path)) {
 				    String entry = name.substring(path.length());
 				    int checkSubdir = entry.indexOf("/");
-				    if (checkSubdir >= 0) {
-				      entry = entry.substring(0, checkSubdir);
+				    if (checkSubdir == 0) {
+				      entry = entry.substring(1);
 				    }
 				    if (entry.toLowerCase().matches(".*\\.(so|dll)")) {
 				    	result.add(entry);
