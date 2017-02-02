@@ -136,7 +136,6 @@ public class IccTransformer {
 		// Determine raster format and default profile
 		int inputFormat = -1;
 		IccProfile inputProfile = null;
-		String profileSource = "default";
 		switch (numBands) {
 		
 			// Grayscale
@@ -198,17 +197,14 @@ public class IccTransformer {
 				if (profile != null) {
 					inputProfile = new IccProfile(profile.getData());
 					usingEmbeddedProfile = true;
-					profileSource = "embedded";
 				} else {
 					long exifCS = md.getExifColorSpace();
 					if ((exifCS == JPEGMetadata.EXIF_CS_SRGB) && (numBands == 3)) {
 						inputProfile = new IccProfile(IccProfile.PROFILE_SRGB);
 						usingEmbeddedProfile = true;
-						profileSource = "EXIF";
 					} else if ((exifCS == JPEGMetadata.EXIF_CS_ADOBERGB) && (numBands == 3)) {
 						inputProfile = new IccProfile(IccProfile.PROFILE_ADOBERGB);
 						usingEmbeddedProfile = true;
-						profileSource = "EXIF";
 					}
 				}
 			}
