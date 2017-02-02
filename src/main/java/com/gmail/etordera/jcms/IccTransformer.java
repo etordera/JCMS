@@ -143,39 +143,32 @@ public class IccTransformer {
 			case 1:
 				inputProfile = m_defaultGray;
 				inputFormat = JCMS.TYPE_GRAY_8;
-				System.out.println("  > Gray: default to "+inputProfile.getProfileInfo());
 				break;
 				
 			// RGB
 			case 3:
 				inputProfile = m_defaultRGB;
 				inputFormat = JCMS.TYPE_RGB_8;
-				System.out.println("  > RGB: default to "+inputProfile.getProfileInfo());
 				if (!md.isAdobeApp14Found() || (md.getAdobeColorTransform() == JPEGMetadata.ADOBE_TRANSFORM_YCbCr)) {
 					convertYCbCrToRGB(rasterData);
-					System.out.println("  > Converted from YCbCr to RGB");
 				}
 				break;
 				
 			// CMYK
 			case 4:
 				inputProfile = m_defaultCMYK;
-				System.out.println("  > CMYK: default to "+inputProfile.getProfileInfo());
 				if (md.isAdobeApp14Found()) {
 					switch (md.getAdobeColorTransform()) {
 						case JPEGMetadata.ADOBE_TRANSFORM_UNKNOWN:
 							inputFormat = JCMS.TYPE_CMYK_8_REV;
-							System.out.println("  > CMYK_8_REV (Adobe)");
 							break;
 						case JPEGMetadata.ADOBE_TRANSFORM_YCCK:
 							convertYcckToCmyk(rasterData, true);
 							inputFormat = JCMS.TYPE_CMYK_8;
-							System.out.println("  > CMYK_8 (converted from Adobe YCCK)");
 							break;
 					}
 				} else {
 					inputFormat = JCMS.TYPE_CMYK_8_REV;
-					System.out.println("  > CMYK_8_REV (Default)");
 				}
 				break;
 		}
@@ -219,11 +212,16 @@ public class IccTransformer {
 					}
 				}
 			}
-			System.out.println("  > Input profile ("+profileSource+"): "+inputProfile.getProfileInfo());
 			
 			// Perform transformation
 			icctransform = new IccTransform(inputProfile, inputFormat, m_destinationProfile, outputFormat, m_intent, m_flags);
-			icctransform.transform(rasterData, outputData, width * height);
+			byte[] inputBuffer = new byte[width * numBands];
+			byte[] outputBuffer = new byte[width * numBands];
+			for (int line=0; line<height; line++) {
+				System.arraycopy(rasterData, line * width * numBands, inputBuffer, 0, width * numBands);
+				icctransform.transform(inputBuffer, outputBuffer, width);
+				System.arraycopy(outputBuffer, 0, outputData, line * width * numBands, width * numBands);
+			}
 			
 		} finally {
 			if (icctransform != null) icctransform.dispose();
