@@ -182,6 +182,7 @@ public class IccTransformer {
 		}
 		BufferedImage output = new BufferedImage(width, height, outputType);
 		byte[] outputData = ((DataBufferByte)output.getRaster().getDataBuffer()).getData();
+		int outputNumBands = output.getRaster().getNumBands();
 		int outputFormat = getJcmsBufferType(output);
 		if (outputFormat == 0) {
 			throw new JCMSException("Unsupported output image type");
@@ -212,11 +213,11 @@ public class IccTransformer {
 			// Perform transformation
 			icctransform = new IccTransform(inputProfile, inputFormat, m_destinationProfile, outputFormat, m_intent, m_flags);
 			byte[] inputBuffer = new byte[width * numBands];
-			byte[] outputBuffer = new byte[width * numBands];
+			byte[] outputBuffer = new byte[width * outputNumBands];
 			for (int line=0; line<height; line++) {
 				System.arraycopy(rasterData, line * width * numBands, inputBuffer, 0, width * numBands);
 				icctransform.transform(inputBuffer, outputBuffer, width);
-				System.arraycopy(outputBuffer, 0, outputData, line * width * numBands, width * numBands);
+				System.arraycopy(outputBuffer, 0, outputData, line * width * outputNumBands, width * outputNumBands);
 			}
 			
 		} finally {
