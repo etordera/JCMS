@@ -4,3 +4,4 @@ src/main/resources/com/gmail/etordera/jcms/lib
 src/jni/cpp/*.h
 utils/obj
 utils/bin
+src/test/resources/output
