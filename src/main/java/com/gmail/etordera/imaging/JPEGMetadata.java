@@ -8,6 +8,8 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.Iterator;
 import java.util.Vector;
 
@@ -824,6 +826,8 @@ public class JPEGMetadata {
 		Vector<Long> APP2Positions = new Vector<Long>();
 		Vector<Long> APP2Lengths = new Vector<Long>();
 		FileInputStream fis = null;
+		FileOutputStream os = null;
+		File tempFile = null;
 		try {
 			fis = new FileInputStream(imagePath);
 			
@@ -902,8 +906,8 @@ public class JPEGMetadata {
 			fis.getChannel().position(0);	
 
 			// Generate new JPEG in temp file
-			File tempFile = File.createTempFile("temp", "jpg");
-			FileOutputStream os = new FileOutputStream(tempFile);
+			tempFile = File.createTempFile("temp", ".jpg");
+			os = new FileOutputStream(tempFile);
 			
 			// Copy SOI
 			fis.getChannel().transferTo(0, 2, os.getChannel());
@@ -937,12 +941,14 @@ public class JPEGMetadata {
 			
 			// Replace old image file with temp file
 			File oldImage = new File(imagePath);
-			oldImage.delete();
-			tempFile.renameTo(oldImage);
+			Files.copy(tempFile.toPath(), oldImage.toPath(), StandardCopyOption.REPLACE_EXISTING);
+			Files.delete(tempFile.toPath());
 			
 		} catch (Exception e) {
 			e.printStackTrace();
 			try {fis.close();} catch (Exception ex) {/*Ignore*/}
+			try {os.close();} catch (Exception ex) {/*Ignore*/}
+			if (tempFile != null) tempFile.delete();
 			return false;
 		}	
 		
