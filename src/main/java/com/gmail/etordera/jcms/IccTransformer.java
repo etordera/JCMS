@@ -97,19 +97,19 @@ public class IccTransformer {
 		if (srcImage == null) {
 			throw new JCMSException("Source image can not be null.");
 		}
-		
+
 		// Read input image data
 		Raster raster = null;
 		int width = 0;
 		int height = 0;
 		int numBands = 0;
 		byte[] rasterData = null;
-		try {
-			ImageInputStream input = ImageIO.createImageInputStream(srcImage);
+		ImageReader reader = null;
+		try (ImageInputStream input = ImageIO.createImageInputStream(srcImage)) {
 			Iterator<ImageReader> it = ImageIO.getImageReaders(input);
 			
 			while (it.hasNext() && (raster == null)) {
-				ImageReader reader = it.next();
+				reader = it.next();
 				reader.setInput(input);
 				if (!reader.canReadRaster()) {
 					reader.dispose();
@@ -124,15 +124,16 @@ public class IccTransformer {
 			}
 						
 		} catch (IOException e) {
+			try {reader.dispose();} catch (Exception ex) {/*Ignore*/}
 			throw new JCMSException("Unable to read source image: "+e.getMessage());
 		}		
 		if (raster == null) {
 			throw new JCMSException("Unsupported source image format");
 		}
-		
+				
 		// Read image metadata
 		JPEGMetadata md = new JPEGMetadata(srcImage.getAbsolutePath());
-		
+
 		// Determine raster format and default profile
 		int inputFormat = -1;
 		IccProfile inputProfile = null;

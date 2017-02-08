@@ -32,13 +32,12 @@ public class JPEGWriter {
 	 * @return <code>true</code> on success, <code>false</code> on error
 	 */
 	public static boolean write(BufferedImage image, File file, float quality, int dpi, ICC_Profile profile) {
-		
-		ImageOutputStream os = null;
-		try {
+
+		ImageWriter writer = null;
+		try (ImageOutputStream os = ImageIO.createImageOutputStream(file)) {
 
 			// Create JPEG writer
-			ImageWriter writer = ImageIO.getImageWritersByFormatName("JPEG").next();
-			os = ImageIO.createImageOutputStream(file);
+			writer = ImageIO.getImageWritersByFormatName("JPEG").next();
 			writer.setOutput(os);
 
 			// Set quality
@@ -60,18 +59,17 @@ public class JPEGWriter {
 			// Write
 			writer.write(null,new IIOImage(image,null,data),params);
 			writer.dispose();
-			os.close();
-			
-			// Embed ICC profile
-			if (profile != null)  {
-				if (!JPEGMetadata.embedIccProfile(profile, file.getAbsolutePath())) {
-					return false;
-				}
-			}
 			
 		} catch (Exception e) {
-			try {os.close();} catch (Exception ex) {}				
+			try {writer.dispose();} catch (Exception ex) {/*Ignore*/}
 			return false;
+		}
+
+		// Embed ICC profile
+		if (profile != null)  {
+			if (!JPEGMetadata.embedIccProfile(profile, file.getAbsolutePath())) {
+				return false;
+			}
 		}
 		
 		return true;

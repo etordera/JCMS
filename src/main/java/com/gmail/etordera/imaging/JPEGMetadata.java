@@ -964,10 +964,10 @@ public class JPEGMetadata {
 	public static int getDpi(String filename) {
 		int dpi = 0;
 
-		try {
+		ImageReader reader = null;
+		try (ImageInputStream iis = ImageIO.createImageInputStream(new File(filename))) {
 			// Get metadata from file
-			ImageInputStream iis = ImageIO.createImageInputStream(new File(filename));
-			ImageReader reader = ImageIO.getImageReaders(iis).next();
+			reader = ImageIO.getImageReaders(iis).next();
 			reader.setInput(iis, true);
 			IIOMetadata metadata = reader.getImageMetadata(0);
 
@@ -986,9 +986,10 @@ public class JPEGMetadata {
                 	break;
                 }
             }
+            reader.dispose();
             
         } catch (Exception e) {
-        	System.err.println("Unable to read DPI from "+filename+": "+e.getMessage());
+        	try {reader.dispose();} catch (Exception ex) {/* Ignore */}
         }
 		
         return dpi;
