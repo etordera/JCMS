@@ -35,7 +35,7 @@ public class IccTransformerTest {
 		
 		// Clear outputFolder
 		File[] outputFiles = outputFolder.listFiles((dir, name)->{
-			return name.toLowerCase().matches(".*\\.jpe?g");
+			return name.toLowerCase().matches(".*\\.(jpe?g|png)");
 		});
 		for (File outputFile : outputFiles) {
 			assertTrue("Can't delete previous output file: " + outputFile.getName(), outputFile.delete());
@@ -48,7 +48,7 @@ public class IccTransformerTest {
 			destProfile = new IccProfile(IccProfile.PROFILE_ADOBERGB);
 			transformer = new IccTransformer(destProfile.getICC_Profile(), JCMS.INTENT_RELATIVE_COLORIMETRIC, true);
 			File[] inputFiles = inputFolder.listFiles((dir, name)->{
-				return name.toLowerCase().matches(".*\\.jpe?g");
+				return name.toLowerCase().matches(".*\\.(jpe?g|png)");
 			});
 			for (File in : inputFiles) {
 				File out = new File(outputFolder, "converted-" + in.getName());
@@ -66,7 +66,7 @@ public class IccTransformerTest {
 		
 		// Test results
 		outputFiles = outputFolder.listFiles((dir, name)->{
-			return name.toLowerCase().matches(".*\\.jpe?g");
+			return name.toLowerCase().matches(".*\\.(jpe?g|png)");
 		});
 		for (File out : outputFiles) {
 			File expected = new File(expectedFolder, out.getName());

@@ -14,8 +14,10 @@ import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
 import javax.imageio.stream.ImageInputStream;
 
+import com.gmail.etordera.imaging.ImageMetadata;
+import com.gmail.etordera.imaging.ImageType;
+import com.gmail.etordera.imaging.ImageWriter;
 import com.gmail.etordera.imaging.JPEGMetadata;
-import com.gmail.etordera.imaging.JPEGWriter;
 
 /**
  * An <code>IccTransformer</code> performs ICC color transformation on images.<br><br>
@@ -92,6 +94,7 @@ public class IccTransformer {
 	 * @return the color transformed image
 	 * @throws JCMSException if any error occurs during color transformation
 	 */
+	@SuppressWarnings("unused")
 	public BufferedImage transform(File srcImage) throws JCMSException {
 		// Validate input image
 		if (srcImage == null) {
@@ -125,15 +128,36 @@ public class IccTransformer {
 						
 		} catch (IOException e) {
 			try {reader.dispose();} catch (Exception ex) {/*Ignore*/}
-			throw new JCMSException("Unable to read source image: "+e.getMessage());
-		}		
+			throw new JCMSException("Unable to read source image raster: "+e.getMessage());
+		}
+		
+		if (raster == null) {
+			try {
+				BufferedImage bi = ImageIO.read(srcImage);
+				raster = bi.getRaster();
+				rasterData = ((DataBufferByte)raster.getDataBuffer()).getData();
+				numBands = raster.getNumBands();
+				width = bi.getWidth();
+				height = bi.getHeight();				
+			} catch (IOException e) {
+				throw new JCMSException("Unable to read source image: "+e.getMessage());
+			}			
+		}
+		
 		if (raster == null) {
 			throw new JCMSException("Unsupported source image format");
 		}
-				
-		// Read image metadata
-		JPEGMetadata md = new JPEGMetadata(srcImage.getAbsolutePath());
 
+		// Read image metadata
+		ImageMetadata md = ImageMetadata.getInstance(srcImage);
+		JPEGMetadata jpmd = null;
+		if (md.getImageType() == ImageType.JPEG) {
+			jpmd = (JPEGMetadata) md;
+		}
+		if (md.isIndexed()) {
+			throw new JCMSException("Unsupported input image color model (indexed).");
+		}
+		
 		// Determine raster format and default profile
 		int inputFormat = -1;
 		IccProfile inputProfile = null;
@@ -149,24 +173,32 @@ public class IccTransformer {
 			case 3:
 				inputProfile = m_defaultRGB;
 				inputFormat = JCMS.TYPE_RGB_8;
-				if (!md.isAdobeApp14Found() || (md.getAdobeColorTransform() == JPEGMetadata.ADOBE_TRANSFORM_YCbCr)) {
-					convertYCbCrToRGB(rasterData);
+				if (md.getImageType() == ImageType.JPEG) {
+					if (!jpmd.isAdobeApp14Found() || (jpmd.getAdobeColorTransform() == JPEGMetadata.ADOBE_TRANSFORM_YCbCr)) {
+						convertYCbCrToRGB(rasterData);
+					}
+				} else if (md.getImageType() == ImageType.PNG) {
+					inputFormat = JCMS.TYPE_BGR_8;
 				}
 				break;
 				
 			// CMYK
 			case 4:
 				inputProfile = m_defaultCMYK;
-				if (md.isAdobeApp14Found()) {
-					switch (md.getAdobeColorTransform()) {
-						case JPEGMetadata.ADOBE_TRANSFORM_UNKNOWN:
-							inputFormat = JCMS.TYPE_CMYK_8_REV;
-							break;
-						case JPEGMetadata.ADOBE_TRANSFORM_YCCK:
-							convertYcckToCmyk(rasterData, true);
-							inputFormat = JCMS.TYPE_CMYK_8;
-							break;
+				if (md.getImageType() == ImageType.JPEG) {
+					if (jpmd.isAdobeApp14Found()) {
+						switch (jpmd.getAdobeColorTransform()) {
+							case JPEGMetadata.ADOBE_TRANSFORM_UNKNOWN:
+								inputFormat = JCMS.TYPE_CMYK_8_REV;
+								break;
+							case JPEGMetadata.ADOBE_TRANSFORM_YCCK:
+								convertYcckToCmyk(rasterData, true);
+								inputFormat = JCMS.TYPE_CMYK_8;
+								break;
+						}
 					}
+				} else if (md.getImageType() == ImageType.PNG) {
+					inputFormat = JCMS.TYPE_ABGR_8;
 				} else {
 					inputFormat = JCMS.TYPE_CMYK_8_REV;
 				}
@@ -177,7 +209,7 @@ public class IccTransformer {
 		}
 		
 		// Generate output BufferedImage
-		int outputType = getBufferedImageType(m_destinationProfile);
+		int outputType = getBufferedImageType(m_destinationProfile, md.isTransparent());
 		if (outputType == -1) {
 			throw new JCMSException("Unsupported output profile type.");
 		}
@@ -199,8 +231,8 @@ public class IccTransformer {
 				if (profile != null) {
 					inputProfile = new IccProfile(profile.getData());
 					usingEmbeddedProfile = true;
-				} else {
-					long exifCS = md.getExifColorSpace();
+				} else if (md.getImageType() == ImageType.JPEG) {
+					long exifCS = jpmd.getExifColorSpace();
 					if ((exifCS == JPEGMetadata.EXIF_CS_SRGB) && (numBands == 3)) {
 						inputProfile = new IccProfile(IccProfile.PROFILE_SRGB);
 						usingEmbeddedProfile = true;
@@ -226,6 +258,15 @@ public class IccTransformer {
 			if (usingEmbeddedProfile) inputProfile.dispose();
 		}
 		
+		// Recover transparency
+		if (md.isTransparent()) {
+			for (int y=0; y<height; y++) {
+				for (int x=0; x<width; x++) {
+					outputData[(y*width + x) * outputNumBands] = rasterData[(y*width + x) * numBands];
+				}
+			}
+		}
+		
 		return output;
 	}
 	
@@ -241,9 +282,37 @@ public class IccTransformer {
 		// Transform source image
 		BufferedImage output = transform(srcImage);
 		
+		// Determine output image type by extension
+		ImageType type = ImageType.JPEG;
+		try {
+			String ext = dstImage.getName().substring(dstImage.getName().lastIndexOf(".")+1);
+			if (ext.matches("(?i)png")) {
+				type = ImageType.PNG;
+			}
+		} catch (Exception e) {
+			/* Ignore */
+		}
+		
+		// Determine input DPI
+		ImageMetadata md = ImageMetadata.getInstance(srcImage);
+		double dpi = md.getDpiX();
+		
 		// Save output image to file
-		if (!JPEGWriter.write(output, dstImage, m_jpegQuality, JPEGMetadata.getDpi(srcImage.getAbsolutePath()), m_destinationProfile.getICC_Profile())) {
-			throw new JCMSException("Unable to write output image");
+		switch (type) {
+			case JPEG:
+				if (!ImageWriter.writeJpeg(output, dstImage, m_jpegQuality, (int)Math.round(dpi), m_destinationProfile.getICC_Profile())) {
+					throw new JCMSException("Unable to write output image");
+				}
+				break;
+				
+			case PNG:
+				if (!ImageWriter.writePng(output, dstImage, dpi, m_destinationProfile.getICC_Profile())) {
+					throw new JCMSException("Unable to write output image");
+				}
+				break;
+				
+			default:
+				throw new JCMSException("Unsupported output image type: " + type);
 		}
 	}
 	
@@ -391,7 +460,10 @@ public class IccTransformer {
 		}
 		
 		// Define output image based on destination profile
-		int outputImageType = getBufferedImageType(dst);
+		boolean transparency = false;
+		transparency |= (inputFormat == BufferedImage.TYPE_4BYTE_ABGR);
+		transparency |= (inputFormat == BufferedImage.TYPE_4BYTE_ABGR_PRE);
+		int outputImageType = getBufferedImageType(dst, transparency);
 		if (outputImageType == -1) {
 			throw new JCMSException("Unsupported output profile type");
 		}
@@ -495,14 +567,14 @@ public class IccTransformer {
 	 * @param profile Reference ICC profile
 	 * @return <code>BufferedImage</code> type (<code>BufferedImage.TYPE_*</code>), or <code>-1</code> if no valid type is found
 	 */
-	private static int getBufferedImageType(IccProfile profile) {
+	private static int getBufferedImageType(IccProfile profile, boolean transparency) {
 		int bufferedImageType = -1;
 		
 		ICC_Profile javaProfile = profile.getICC_Profile();
 		if (javaProfile != null) {
 			switch (javaProfile.getColorSpaceType()) {
 				case ColorSpace.TYPE_RGB:
-					bufferedImageType = BufferedImage.TYPE_3BYTE_BGR;
+					bufferedImageType = transparency ? BufferedImage.TYPE_4BYTE_ABGR : BufferedImage.TYPE_3BYTE_BGR;
 					break;
 				case ColorSpace.TYPE_GRAY:
 					bufferedImageType = BufferedImage.TYPE_BYTE_GRAY;

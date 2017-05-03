@@ -10,6 +10,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.util.Arrays;
 import java.util.Iterator;
 import java.util.Vector;
 
@@ -28,18 +29,23 @@ import org.w3c.dom.Node;
 /**
  * Gets metadata from JPEG images.
  * 
- * @author enric
- *
  */
-public class JPEGMetadata {
+public class JPEGMetadata extends ImageMetadata {
 
+	/** Top orientation EXIF identifier. */
+	private static final int EXIF_ORIENTATION_UP = 1;
+	/** Left orientation EXIF identifier. */
+	private static final int EXIF_ORIENTATION_LEFT = 6;
+	/** Right orientation EXIF identifier. */
+	private static final int EXIF_ORIENTATION_RIGHT = 8;
+	/** Upside down orientation EXIF identifier. */
+	private static final int EXIF_ORIENTATION_DOWN = 3;
+			
 	/** JPEG file name */
 	private String m_filename;
-	/** Enable or disable logging */
-	private boolean m_logging;
 	
 	/** Metadata: Image orientation */
-	private long m_orientation = 0;
+	private long m_orientation = EXIF_ORIENTATION_UP;
 	/** Metadata: EXIF color space tag */
 	private long m_exifColorSpace = 0;
 	/** <code>true</code> only if Adobe APP14 JPEG segment was found */
@@ -54,6 +60,16 @@ public class JPEGMetadata {
 	private Vector<Long> m_iccPositions = null;
 	/** Metadata: ICC profile fragments sizes */ 
 	private Vector<Long> m_iccSizes = null;
+	/** Tells whether image contains a JFIF marker. */
+	private boolean m_isJFIF = false;
+	/** Tells whether image contains an EXIF marker. */
+	private boolean m_isEXIF = false;
+	/** Number of color bands/channels. */
+	private int m_numBands;
+	/** Horizontal print resolution (dpi). */
+	private double m_dpiX;
+	/** Vertical print resolution (dpi). */
+	private double m_dpiY;
 
 	/* Adobe Constants */
 	/**	Adobe color transform unknown (GRAY, RGB or CMYK values) */
@@ -95,34 +111,52 @@ public class JPEGMetadata {
 	private static final byte EXIF_TAG[] = {'E','x','i','f',0,0};
 	/** Identification string for APP14 Adobe segments */
 	private static final byte ADOBE_TAG[] = {'A','d','o','b','e',0};
-	//private static final byte JFIF_TAG[] = {'J','F','I','F',0};
+	/** Identification string for JFIF segments. */
+	private static final byte JFIF_TAG[] = {'J','F','I','F',0};
 	//private static final byte JFXX_TAG[] = {'J','F','X','X',0};
 		
 	/**
-	 * Builds a JPEGMetadata object with data from a JPEG file
-	 * 
-	 * @param filename JPEG file path
+	 * Default constructor.
 	 */
-	public JPEGMetadata(String filename) {
-		this(filename, false);
+	public JPEGMetadata() {
 	}
 
 	/**
-	 * Builds a JPEGMetadata object with data from a JPEG file.
-	 * 
-	 * @param filename JPEG file path
-	 * @param logging if <code>true</code>, enables output of debug messages
+	 * Creates metadata object and loads metadata from a JPEG file.
+	 * @param filepath Path to JPEG file.
+	 * @throws IOException If metadata can't be read from JPEG file.
 	 */
-	public JPEGMetadata(String filename, boolean logging) {
-		m_logging = logging;
-		m_filename = filename;
-		readMetadata();
+	public JPEGMetadata(String filepath) throws IOException {
+		if (!load( new File(filepath) ))  {
+			throw new IOException("The file '"+filepath+"' couldn't be load");
+		}
+	}
+
+
+	/**
+	 * Loads metadata from a JPEG file.
+	 * @param jpegFile Path to JPEG file.
+	 * @return <code>true</code> on successful metadata load, <code>false</code> on error.
+	 */
+	public boolean load(File jpegFile) {
+		m_filename = jpegFile.getAbsolutePath();
+		boolean result = readMetadata();
+		if (!result) {
+			System.err.println("Error while loading JPEG metadata: " + jpegFile.getAbsolutePath());
+		} else {
+			loadPixelSize(jpegFile);
+			loadNumBands(m_filename);
+			if (m_dpiX == 0 || m_dpiY == 0) {
+				loadDpi(m_filename);
+			}
+		}
+		return result;
 	}
 
 	
 	/**
 	 * Saves JPEG thumbnail to file.
-	 * 
+	 *
 	 * @param thumbnail Path to output thumbnail file
 	 * @return <code>true</code> on succes, <code>false</code> on error
 	 */
@@ -134,7 +168,6 @@ public class JPEGMetadata {
 				fis.getChannel().transferTo(m_thumbPos, m_thumbSize, fos.getChannel());
 				fis.close();
 				fos.close();
-				log("Thumbnail saved");				
 			} catch (FileNotFoundException e) {
 				return false;
 			} catch (IOException e) {
@@ -152,6 +185,7 @@ public class JPEGMetadata {
 	 * 
 	 * @return thumbnail data, or <code>null</code> if unable to load.
 	 */
+	@Override
 	public ByteArrayInputStream getThumbnailAsInputStream() {
 		if (m_thumbPos!=0 && m_thumbSize!=0) {
 			byte[] buffer = new byte[(int)m_thumbSize];
@@ -176,163 +210,120 @@ public class JPEGMetadata {
 	 * 
 	 * @return <code>true</code> if thumbnail was found and is available, <code>false</code> if not
 	 */
+	@Override
 	public boolean hasThumbnail() {
 		return (m_thumbPos!=0 && m_thumbSize!=0);
 	}
 	
 	
 	/**
-	 * Reads metadata from JPEG file and stores it inside this object.
+	 * Reads metadata from JPEG file and stores it.
 	 */
-	private void readMetadata() {
+	private boolean readMetadata() {
 		// Read buffer
-		byte[] buffer = new byte[256];
+		byte[] buffer;
 
-		// Check file is readable
-		File file = new File(m_filename);
-		if (!file.canRead()) {
-			log("* Can't read file");
-			return;
-		}
-
-		try {
-			FileInputStream fis = new FileInputStream(m_filename);
-			
+		try (FileInputStream fis = new FileInputStream(m_filename)) {
+						
 			// Read start marker
-			if (fis.read(buffer,0,2) != 2) {
-				log("* First read error");
-				fis.close();
-				return;
-			}
-			if (memcmp(buffer,SOI,2) != 0) {
-				log("* Not a valid JPEG image.");
-				fis.close();
-				return;
+			if (!Arrays.equals(SOI, readBytes(fis, 2))) {
+				throw new Exception("Not a JPEG image (SOI marker not found).");
 			}
 
 			// Detect markers
 			long markerLength;
 			long markerStart;
-			int appid;
 			boolean finished = false;
 			m_iccPositions = new Vector<Long>();
 			m_iccSizes = new Vector<Long>();
 			while (!finished) {
-				if (fis.read(buffer,0,2) != 2) {
-					log("* Marker read error");
-					fis.close();
-					return;
-				}
+				buffer = readBytes(fis, 2);
 				if (buffer[0] != (byte)0xFF) {
-					log("* Invalid marker");
-					fis.close();
-					return;
+					throw new Exception("Invalid marker");
 				}
 				switch (buffer[1]) {
 					case (byte)0xFF:
-						log("- Padding");
+						// Padding
 						break;
 
+					case JPEG_MARKER_APP0:
+						markerStart = fis.getChannel().position();
+						buffer = readBytes(fis, 2);
+						markerLength = (0xFF & buffer[0])*256 + (0xFF & buffer[1]);
+						if (Arrays.equals(JFIF_TAG, readBytes(fis, 5))) {
+							if (!m_isEXIF) {
+								m_isJFIF = true;
+							}
+						}
+						fis.getChannel().position(markerStart+markerLength);
+						break;
+										
 					case JPEG_MARKER_APP1:
 						markerStart = fis.getChannel().position();
-						if (fis.read(buffer,0,2) != 2) {
-							log("APP1 Marker read error");
-							fis.close();
-							return;
-						}
+						buffer = readBytes(fis, 2);
 						markerLength = (0xFF & buffer[0])*256 + (0xFF & buffer[1]);
-						log("- APP1 Marker ("+markerLength+" bytes)");
-						if (fis.read(buffer,0,6) != 6) {
-							log("APP1 Marker data read error");
-							fis.close();
-							return;
-						}
-						if (memcmp(buffer,EXIF_TAG,6) == 0) {
+						if (Arrays.equals(EXIF_TAG, readBytes(fis, 6))) {
+							m_isEXIF = true;
 							long exifStart;
 							exifStart = fis.getChannel().position();
-							log("- Exif data found");
 							// Read TIFF header
-							if (fis.read(buffer,0,8) != 8) {
-								log("EXIF TIFF Header read error");
-								fis.close();
-								return;
-							}
-							boolean littleEndian = false;
-							if (buffer[0] == (byte) 0x49) {
-								log("Little Endian");
-								littleEndian = true;
-							} else {
-								log("Big Endian");
-								littleEndian = false;
-							}
-							long tag42 = exifReadWord(subArray(buffer,2,4), littleEndian);
+							buffer = readBytes(fis, 8);
+							boolean littleEndian = (buffer[0] == (byte) 0x49);
+							//long tag42 = exifReadWord(subArray(buffer,2,4), littleEndian);
 							long offsetIFD0 =  exifReadLong(subArray(buffer,4,8),littleEndian);
-							log("Tag 42: "+tag42+" - Offset to IFD0: "+offsetIFD0);
 
 							// Read TIFF parameters (IFD0)
 							fis.getChannel().position(exifStart+offsetIFD0);
-							if (fis.read(buffer,0,2) != 2) {
-								log("EXIF IFD0 read error");
-								fis.close();
-								return;
-							}
-							long IFD0count = exifReadWord(buffer,littleEndian);
-							log("- "+IFD0count+" parameters in IFD0");
+							long IFD0count = exifReadWord(readBytes(fis, 2), littleEndian);
 							long exifIFDoffset = 0;
 							long whitePointOffset = 0;
 							long primariesOffset = 0;
 							for (int i=0; i<IFD0count; i++) {
-								if (fis.read(buffer,0,12) != 12) {
-									log("EXIF IFD0 read error");
-									fis.close();
-									return;
-								}
+								buffer = readBytes(fis, 12);
 								long exifTag = exifReadWord(subArray(buffer,0,2),littleEndian);
 								long exifType = exifReadWord(subArray(buffer,2,4),littleEndian);
 								long exifCount = exifReadLong(subArray(buffer,4,8),littleEndian);
 								long exifValueOffset = exifReadValue(subArray(buffer,8,12),littleEndian,exifType,exifCount);
-								log("- "+i+": Tag "+exifTag+", Type "+exifType+", Count "+exifCount+", Value-Offset "+exifValueOffset);
 								if (exifTag == 0x0112) {
 									m_orientation = exifValueOffset;
+									
 								} else if (exifTag == 0x8769) {
 									exifIFDoffset = exifValueOffset;
+									
 								} else if (exifTag == 0x13e) {
 									whitePointOffset = exifValueOffset;
+									
 								} else if (exifTag == 0x13f) {
 									primariesOffset = exifValueOffset;
+									
+								} else if (exifTag == 0x011A || exifTag == 0x011B) {
+									// X Resolution / Y Resolution
+									long currentPos = fis.getChannel().position();
+									fis.getChannel().position(exifStart + exifValueOffset);
+									long numerator = exifReadLong(readBytes(fis, 4), littleEndian);
+									long denominator = exifReadLong(readBytes(fis, 4), littleEndian);
+									double dpi = (double)numerator/(double)denominator;
+									if (exifTag == 0x011A) {
+										m_dpiX = dpi;
+									} else {
+										m_dpiY = dpi;
+									}
+									fis.getChannel().position(currentPos);								
 								}
 							}
 							// Read IFD1 offset
-							if (fis.read(buffer,0,4) != 4) {
-								log("EXIF IFD1 offset read error");
-								fis.close();
-								return;
-							}
-							long IFD1offset = 0;
-							IFD1offset = exifReadLong(buffer,littleEndian);
-							log("- Offset to IFD1: "+IFD1offset);
+							long IFD1offset =  exifReadLong(readBytes(fis, 4), littleEndian);
 
 							// Read EXIF parameters
 							if (exifIFDoffset != 0) {
 								fis.getChannel().position(exifStart+exifIFDoffset);
-								if (fis.read(buffer,0,2) != 2) {
-									log("EXIF IFD read error");
-									fis.close();
-									return;
-								}
-								long ExifIFDcount = exifReadWord(buffer,littleEndian);
-								log("- "+ExifIFDcount+" parameters in Exif IFD");
+								long ExifIFDcount = exifReadWord(readBytes(fis, 2), littleEndian);
 								for (int i=0; i<ExifIFDcount; i++) {
-									if (fis.read(buffer,0,12) != 12) {
-										log("EXIF IFD read error");
-										fis.close();
-										return;
-									}
+									buffer = readBytes(fis, 12);
 									long exifTag = exifReadWord(buffer,littleEndian);
 									long exifType = exifReadWord(subArray(buffer,2,4),littleEndian);
 									long exifCount = exifReadLong(subArray(buffer,4,8),littleEndian);
 									long exifValueOffset = exifReadValue(subArray(buffer,8,12),littleEndian,exifType,exifCount);
-									log("- "+i+": Tag "+exifTag+", Type "+exifType+", Count "+exifCount+", Value-Offset "+exifValueOffset);
 									if (exifTag == 0xA001) { // ColorSpace
 										m_exifColorSpace = exifValueOffset;
 									}
@@ -346,11 +337,7 @@ public class JPEGMetadata {
 
                                 if (whitePointOffset != 0) {
                                 	fis.getChannel().position(exifStart+whitePointOffset);
-    								if (fis.read(buffer,0,16) != 16) {
-    									log("EXIF white point read error");
-    									fis.close();
-    									return;
-    								}
+                                	buffer = readBytes(fis, 16);
                                     for (int wp=0; wp<4; wp++) {
                                     	rationals[wp] = exifReadLong(subArray(buffer,wp*4,wp*4+4),littleEndian);
                                     }
@@ -358,11 +345,7 @@ public class JPEGMetadata {
 
                                 if (primariesOffset != 0) {
                                 	fis.getChannel().position(exifStart+primariesOffset);
-    								if (fis.read(buffer,0,48) != 48) {
-    									log("EXIF primaries read error");
-    									fis.close();
-    									return;
-    								}
+                                	buffer = readBytes(fis, 48);
                                     for (int p=0; p<12; p++) {
                                     	rationals[4+p] = exifReadLong(subArray(buffer,p*4,p*4+4),littleEndian);
                                     }
@@ -371,37 +354,26 @@ public class JPEGMetadata {
                                 long adobeRGBrationals[] = {313,1000,329,1000,64,100,33,100,21,100,71,100,15,100,6,100};
                                 boolean isAdobeRGB = true;
                                 for (int cmp=0; cmp<16; cmp++) {
-                                        if (rationals[cmp] != adobeRGBrationals[cmp]) {
-                                                isAdobeRGB = false;
-                                                break;
-                                        }
+                                    if (rationals[cmp] != adobeRGBrationals[cmp]) {
+                                            isAdobeRGB = false;
+                                            break;
+                                    }
                                 }
                                 if (isAdobeRGB) {
-                                        m_exifColorSpace = EXIF_CS_ADOBERGB;
+                                	m_exifColorSpace = EXIF_CS_ADOBERGB;
                                 }					
 							}
 							
 							// Read thumbnail data (IFD1)
 							if (IFD1offset != 0) {
 								fis.getChannel().position(exifStart+IFD1offset);
-								if (fis.read(buffer,0,2) != 2) {
-									log("EXIF IFD1 read error");
-									fis.close();
-									return;
-								}
-								long ExifIFD1count = exifReadWord(buffer,littleEndian);
-								log("- "+ExifIFD1count+" parameters in Exif IFD1 (Thumbnail)");
+								long ExifIFD1count = exifReadWord(readBytes(fis, 2), littleEndian);
 								for (int i=0; i<ExifIFD1count; i++) {
-									if (fis.read(buffer,0,12) != 12) {
-										log("EXIF IFD1 read error");
-										fis.close();
-										return;
-									}
+									buffer = readBytes(fis, 12);
 									long exifTag = exifReadWord(buffer,littleEndian);
 									long exifType = exifReadWord(subArray(buffer,2,4),littleEndian);
 									long exifCount = exifReadLong(subArray(buffer,4,8),littleEndian);
 									long exifValueOffset = exifReadValue(subArray(buffer,8,12),littleEndian,exifType,exifCount);
-									log("- "+i+": Tag "+exifTag+", Type "+exifType+", Count "+exifCount+", Value-Offset "+exifValueOffset);
 									if (exifTag == 0x0201) { // JPEGInterchangeFormat (thumb offset)
 										m_thumbPos = exifStart+exifValueOffset;
 									} else if (exifTag == 0x0202) { // JPEGInterchangeFormatLength (thumb length)
@@ -415,26 +387,11 @@ public class JPEGMetadata {
 
 					case JPEG_MARKER_APP2:
 						markerStart = fis.getChannel().position();
-						if (fis.read(buffer,0,2) != 2) {
-							log("APP2 Marker read error");
-							fis.close();
-							return;
-						}
+						buffer = readBytes(fis, 2);
 						markerLength = (0xFF & buffer[0])*256 + (0xFF & buffer[1]);
-						log("- APP2 Marker ("+markerLength+" bytes)");
-						if (fis.read(buffer,0,12) != 12) {
-							log("APP2 Marker data read error");
-							fis.close();
-							return;
-						}
-						if (memcmp(buffer,ICC_TAG,12) == 0) {
-							if (fis.read(buffer,0,2) != 2) {
-								log("ICC chunk read error");
-								fis.close();
-								return;
-							}
+						if (Arrays.equals(ICC_TAG, readBytes(fis, 12))) {
+							readBytes(fis, 2);
 							long chunkSize = markerLength-2-12-2;
-							log("- ICC Chunk ("+chunkSize+" bytes)");
 							m_iccPositions.add(fis.getChannel().position());
 							m_iccSizes.add(chunkSize);
 						}
@@ -443,31 +400,16 @@ public class JPEGMetadata {
 
 					case JPEG_MARKER_APP14:
 						markerStart = fis.getChannel().position();
-						if (fis.read(buffer,0,2) != 2) {
-							log("APP14 Marker read error");
-							fis.close();
-							return;
-						}
+						buffer = readBytes(fis, 2);
 						markerLength = ((0xFF & buffer[0]) << 8) + (0xFF & buffer[1]);
-						log("- APP14 Marker ("+markerLength+" bytes)");
-						if (fis.read(buffer,0,6) != 6) {
-							log("APP14 Marker data read error");
-							fis.close();
-							return;
-						}
-						if (memcmp(buffer,ADOBE_TAG,6) == 0) {
-							if (fis.read(buffer,0,6) != 6) {
-								log("Adobe Marker read error");
-								fis.close();
-								return;
-							}
+						if (Arrays.equals(ADOBE_TAG, readBytes(fis, 6))) {
+							buffer = readBytes(fis, 6);
 							m_adobeApp14Found = true;
 							m_adobeTransform = buffer[5];
 						}
 						fis.getChannel().position(markerStart+markerLength);						
 						break;
 												
-					case JPEG_MARKER_APP0:
 					case JPEG_MARKER_APP3:
 					case JPEG_MARKER_APP4:
 					case JPEG_MARKER_APP5:
@@ -480,14 +422,8 @@ public class JPEGMetadata {
 					case JPEG_MARKER_APP12:
 					case JPEG_MARKER_APP13:
 					case JPEG_MARKER_APP15:
-						appid = (0xFF & buffer[1]) - 0x000000E0;
-						if (fis.read(buffer,0,2) != 2) {
-							log("APP"+appid+" Marker read error");
-							fis.close();
-							return;
-						}
+						buffer = readBytes(fis, 2);
 						markerLength = (0xFF & buffer[0])*256 + (0xFF & buffer[1]);
-						log("- APP"+appid+" Marker ("+markerLength+" bytes)");
 						fis.skip(markerLength-2);
 						break;
 
@@ -497,27 +433,24 @@ public class JPEGMetadata {
 				}
 			}
 			
-			// Close file
-			fis.close();
-						
 		} catch (Exception e) {
-			return;
+			return false;
 		}
 		
-		return;
+		return true;
 	}
 	
 	
 	/**
 	 * Gets embedded ICC color profile.
-	 * 
 	 * @return Embedded ICC color profile, or <code>null</code> if not detected.
 	 */
+	@Override
 	public ICC_Profile getIccProfile() {
 		
 		// Check initializations
 		if ((m_iccPositions == null) || (m_iccSizes == null)) {
-			System.err.println("Metadatos no cargados");
+			System.err.println("Metadata still not loaded.");
 			return null;
 		}
 		if ((m_iccPositions.size() != m_iccSizes.size()) || (m_iccPositions.size() == 0)) {
@@ -542,7 +475,7 @@ public class JPEGMetadata {
 				is.getChannel().position(chunkPosition);
 				int readBytes = is.read(profileData,currentPosition,(int)chunkSize);
 				if (readBytes != chunkSize) {
-					System.err.println("No se pueden leer los bytes del segmento "+i+" del perfil ICC.");
+					System.err.println("Unable to read bytes for segment #"+i+" of ICC profile.");
 					is.close();
 					return null;
 				}
@@ -560,7 +493,7 @@ public class JPEGMetadata {
 		try {
 			profile = ICC_Profile.getInstance(profileData);
 		} catch (IllegalArgumentException e) {
-			System.err.println("Perfil de color incrustado no válido.");
+			System.err.println("Invalid embedded profile.");
 			return null;
 		}
 		
@@ -704,25 +637,6 @@ public class JPEGMetadata {
 		return newBuffer;
 	}
 	
-	/**
-	 * Logs to console a debug message
-	 * 
-	 * @param msg Message to log
-	 */
-	private void log(String msg) {
-		if (m_logging) {
-			System.out.println(msg);
-		}
-	}
-	
-	/**
-	 * Get image orientation.
-	 * 
-	 * @return Image orientation Exif value
-	 */
-	public long getOrientation() {
-		return m_orientation;
-	}
 
 	/**
 	 * Get Exif color space.
@@ -752,25 +666,6 @@ public class JPEGMetadata {
 	public boolean isAdobeApp14Found() {
 		return  m_adobeApp14Found;
 	}
-	
-	/**
-	 * Check if debug logging is enabled.
-	 * 
-	 * @return <code>true</code> if debug logging is enabled, <code>false</code> otherwise
-	 */
-	public boolean isLogging() {
-		return m_logging;
-	}
-
-	/**
-	 * Set debug logging status
-	 * 
-	 * @param logging <code>true</code> for enabling debug loggin, <code>false</code> to disable
-	 */
-	public void setLogging(boolean logging) {
-		m_logging = logging;
-	}
-	
 	
 	
 	/**
@@ -809,8 +704,12 @@ public class JPEGMetadata {
 	 * @return Embedded ICC Profile, or <code>null</code> if not found
 	 */
 	public static ICC_Profile getIccProfile(String imagePath) {
-		JPEGMetadata md = new JPEGMetadata(imagePath);
-		return md.getIccProfile();
+		ICC_Profile icc = null;
+		JPEGMetadata md = new JPEGMetadata();
+		if (md.load(new File(imagePath))) {
+			icc = md.getIccProfile();
+		}
+		return icc;
 	}
 	
 	/**
@@ -1022,4 +921,144 @@ public class JPEGMetadata {
 		return object;
 	}
 	
+
+	/**
+	 * Stores pixel density / resolution embedded in JPEG metadata.
+	 * @param filename Path to JPEG file.
+	 */
+	private void loadDpi(String filename) {
+		ImageReader reader = null;
+		try (ImageInputStream iis = ImageIO.createImageInputStream(new File(filename))) {
+			// Get metadata from file
+			reader = ImageIO.getImageReaders(iis).next();
+			reader.setInput(iis, true);
+			IIOMetadata metadata = reader.getImageMetadata(0);
+
+			// Locate dpi			
+            String[] names = metadata.getMetadataFormatNames();
+            for (String name : names) {
+                Node node = metadata.getAsTree(name);
+                String dpiString = (String) queryXPath(node, "JPEGvariety/app0JFIF/@Xdensity", XPathConstants.STRING);
+                if (dpiString != null) {
+                	m_dpiX = Double.parseDouble(dpiString);
+                }
+                dpiString = (String) queryXPath(node, "JPEGvariety/app0JFIF/@Ydensity", XPathConstants.STRING);
+                if (dpiString != null) {
+                	m_dpiY = Double.parseDouble(dpiString);
+                }
+                if (m_dpiX != 0 && m_dpiY != 0) {
+                	break;
+                }
+                dpiString = (String) queryXPath(node, "Dimension/HorizontalPixelSize/@value", XPathConstants.STRING);
+                if (dpiString != null) {
+                	m_dpiX = Math.round(25.4 / Double.parseDouble(dpiString));
+                }
+                dpiString = (String) queryXPath(node, "Dimension/VerticalPixelSize/@value", XPathConstants.STRING);
+                if (dpiString != null) {
+                	m_dpiY = Math.round(25.4 / Double.parseDouble(dpiString));
+                }
+                if (m_dpiX != 0 && m_dpiY != 0) {
+                	break;
+                }
+            }
+            
+            reader.dispose();
+            
+        } catch (Exception e) {
+        	try {reader.dispose();} catch (Exception ex) {/*Ignore*/}
+        }		
+	}
+    
+    
+	/**
+	 * Detects number of channels in JPEG file.
+	 * @param filePath Path to JPEG file.
+	 */
+	private void loadNumBands(String filePath) {		
+		ImageInputStream in = null;
+		try {
+			in = ImageIO.createImageInputStream(new File(filePath));
+		    Iterator<ImageReader> readers = ImageIO.getImageReadersByFormatName("JPEG");
+		    boolean done = false;
+		    while (readers.hasNext() && !done) {
+		        ImageReader reader = readers.next();
+		        try {
+		            reader.setInput(in);
+		            m_numBands = reader.getImageTypes(0).next().getNumBands();
+		            done = true;
+		        } finally {
+		            reader.dispose();
+		        }
+		    }
+		    in.close();
+		} catch (Exception e) {
+		    try {in.close();} catch (Exception ex) {/*Ignore*/}
+		    m_numBands = 4;
+		}
+	}
+	
+	
+	/** 
+	 * Tells whether image metadata contains a valid JFIF marker.
+	 * @return <code>true</code> if metadata contains a valid JFIF marker, <code>false</code> otherwise.
+	 */
+	public boolean isJFIF() {
+		return m_isJFIF;
+	}
+	
+	
+	/** 
+	 * Tells whether image metadata contains a valid EXIF marker.
+	 * @return <code>true</code> if metadata contains a valid EXIF marker, <code>false</code> otherwise.
+	 */
+	public boolean isEXIF() {
+		return m_isEXIF;
+	}	
+	
+	
+	@Override
+	public ImageType getImageType() {
+		return ImageType.JPEG;
+	}
+
+	@Override
+	public boolean isGreyscale() {
+		return m_numBands == 1;
+	}
+
+
+	@Override
+	public boolean isRGB() {
+		return m_numBands == 3;
+	}
+
+
+	@Override
+	public boolean isCMYK() {
+		return m_numBands == 4;
+	}
+
+
+	@Override
+	public double getDpiX() {
+		return m_dpiX;
+	}
+
+
+	@Override
+	public double getDpiY() {
+		return m_dpiY;
+	}
+	
+	@Override
+	public ImageOrientation getOrientation() {
+		if (m_orientation == EXIF_ORIENTATION_LEFT) {
+			return ImageOrientation.LEFT;
+		} else if (m_orientation == EXIF_ORIENTATION_RIGHT) {
+			return ImageOrientation.RIGHT;
+		} else if (m_orientation == EXIF_ORIENTATION_DOWN) {
+			return ImageOrientation.DOWN;
+		}
+		return ImageOrientation.TOP;
+	}	
 }

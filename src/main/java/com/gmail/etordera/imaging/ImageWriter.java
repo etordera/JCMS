@@ -8,18 +8,15 @@ import javax.imageio.IIOImage;
 import javax.imageio.ImageIO;
 import javax.imageio.ImageTypeSpecifier;
 import javax.imageio.ImageWriteParam;
-import javax.imageio.ImageWriter;
 import javax.imageio.metadata.IIOMetadata;
 import javax.imageio.metadata.IIOMetadataNode;
 import javax.imageio.stream.ImageOutputStream;
 
 /**
- * Utility class for writing JPEG images.
- * 
- * @author enric
+ * Utility class for writing images to disk.
  *
  */
-public class JPEGWriter {
+public class ImageWriter {
 
 	/**
 	 * Writes an image to disk in JPEG format.
@@ -31,9 +28,9 @@ public class JPEGWriter {
 	 * @param profile ICC profile to be embedded in JPEG metadata (may be <code>null</code>)
 	 * @return <code>true</code> on success, <code>false</code> on error
 	 */
-	public static boolean write(BufferedImage image, File file, float quality, int dpi, ICC_Profile profile) {
+	public static boolean writeJpeg(BufferedImage image, File file, float quality, int dpi, ICC_Profile profile) {
 
-		ImageWriter writer = null;
+		javax.imageio.ImageWriter writer = null;
 		try (ImageOutputStream os = ImageIO.createImageOutputStream(file)) {
 
 			// Create JPEG writer
@@ -74,5 +71,36 @@ public class JPEGWriter {
 		
 		return true;
 	}
+
 	
+	/**
+	 * Writes an image to disk in PNG format.
+	 * 
+	 * @param image Image to write.
+	 * @param file Destination file.
+	 * @param dpi Resolution to be included in PNG metadata (dots per inch), <code>0</code> for none.
+	 * @param profile ICC profile to be embedded in JPEG metadata (may be <code>null</code>)
+	 * @return <code>true</code> on success, <code>false</code> on error
+	 */
+	public static boolean writePng(BufferedImage image, File file, double dpi, ICC_Profile profile) {
+
+		// Write PNG Image
+		try  {
+			if (!ImageIO.write(image, "PNG", file)) {
+				throw new Exception("No suitable writer found for PNG format.");
+			}
+		} catch (Exception e) {
+			System.err.println("PNG write error: " + e.getMessage());
+			return false;
+		}
+
+		// Embed Metadata
+		if (dpi < 0) dpi = 0;
+		if (!PNGMetadata.embedMetadata(file.getAbsolutePath(), profile, dpi)) {
+			System.err.println("Unable to embed PNG metadata.");
+			return false;
+		}
+		
+		return true;
+	}	
 }
