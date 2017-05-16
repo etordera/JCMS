@@ -461,8 +461,8 @@ public class IccTransformer {
 		
 		// Define output image based on destination profile
 		boolean transparency = false;
-		transparency |= (inputFormat == BufferedImage.TYPE_4BYTE_ABGR);
-		transparency |= (inputFormat == BufferedImage.TYPE_4BYTE_ABGR_PRE);
+		transparency |= (image.getType() == BufferedImage.TYPE_4BYTE_ABGR);
+		transparency |= (image.getType() == BufferedImage.TYPE_4BYTE_ABGR_PRE);
 		int outputImageType = getBufferedImageType(dst, transparency);
 		if (outputImageType == -1) {
 			throw new JCMSException("Unsupported output profile type");
