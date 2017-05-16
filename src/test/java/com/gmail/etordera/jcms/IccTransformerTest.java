@@ -1,12 +1,22 @@
 package com.gmail.etordera.jcms;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
+import java.awt.color.ICC_Profile;
+import java.awt.image.BufferedImage;
 import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 
+import javax.imageio.ImageIO;
+
 import org.junit.Test;
+
+import com.gmail.etordera.imaging.ImageMetadata;
+import com.gmail.etordera.imaging.ImageWriter;
+
 
 /**
  * Tests for {@link com.gmail.etordera.jcms.IccTransformer} class 
@@ -78,6 +88,96 @@ public class IccTransformerTest {
 		System.out.println("> IccTransformer.transform(File, File) finished.");		
 	}
 
+	/**
+	 * Test for {@link com.gmail.etordera.jcms.IccTransformer#transform(java.awt.image.BufferedImage, java.awt.color.ICC_Profile)}.
+	 */
+	@Test
+	public void testTransformFileICC_Profile() {
+		System.out.println("> IccTransformer.transform(File, ICC_Profile) started.");
+
+		// Define paths
+		String resourcesPath = "src/test/resources/";
+		File inputFolder = new File(resourcesPath + "input");
+		File outputFolder = new File(resourcesPath + "output/file-icc");
+		File expectedFolder = new File(resourcesPath + "expected");
+		
+		// Check paths
+		assertTrue("Input folder missing.", inputFolder.isDirectory());
+		assertTrue("Expected folder missing.", expectedFolder.isDirectory());
+		assertTrue("Can't create outputfolder", outputFolder.isDirectory() || outputFolder.mkdirs());
+		
+		// Clear outputFolder
+		File[] outputFiles = outputFolder.listFiles((dir, name)->{
+			return name.toLowerCase().matches(".*\\.(jpe?g|png)");
+		});
+		for (File outputFile : outputFiles) {
+			assertTrue("Can't delete previous output file: " + outputFile.getName(), outputFile.delete());
+		}
+		
+		// Perform conversions
+		IccProfile destProfile = null;
+		IccTransformer transformer = null;
+		IccProfile  srgb = null;
+		try {
+			srgb = new IccProfile(IccProfile.PROFILE_SRGB);
+			destProfile = new IccProfile(IccProfile.PROFILE_ADOBERGB);
+			transformer = new IccTransformer(destProfile.getICC_Profile(), JCMS.INTENT_RELATIVE_COLORIMETRIC, true);
+			File[] inputFiles = inputFolder.listFiles((dir, name)->{
+				return name.toLowerCase().matches(".*\\.(jpe?g|png)") && !name.toLowerCase().contains("fogra");
+			});
+			for (File in : inputFiles) {
+				File out = new File(outputFolder, "converted-" + in.getName());
+				System.out.print("Transform " + in.getName() + " to " + out.getName() + "...");
+				
+				ImageMetadata md = ImageMetadata.getInstance(in);
+				ICC_Profile profile = md.getIccProfile();
+				
+				BufferedImage image = ImageIO.read(in);
+				assertNotNull("Unable to load image: " + in.getAbsolutePath(), image);
+				image = transformer.transform(image, profile == null ? srgb.getICC_Profile() : profile);
+
+				switch (md.getImageType()) {
+					case PNG:
+						if (!ImageWriter.writePng(image, out, md.getDpiX(), destProfile.getICC_Profile())) {
+							throw new JCMSException("Unable to write output image: " + out.getAbsolutePath());
+						}
+						break;
+					case JPEG:
+						if (!ImageWriter.writeJpeg(image, out, transformer.getJpegQuality(), (int)Math.round(md.getDpiX()), destProfile.getICC_Profile())) {
+							throw new JCMSException("Unable to write output image: " + out.getAbsolutePath());
+						}
+						break;
+					default:
+						throw new Exception("Unsupported image format: " + md.getImageType());
+				}
+				
+				System.out.println("Ok");
+			}
+		} catch (Exception e) {
+			fail("Exception: " + e.getMessage());
+			
+		} finally {
+			if (transformer != null) transformer.dispose();
+			if (destProfile != null) destProfile.dispose();
+			if (srgb != null) srgb.dispose();
+		}
+		
+		// TODO: Test results
+		/*
+		outputFiles = outputFolder.listFiles((dir, name)->{
+			return name.toLowerCase().matches(".*\\.(jpe?g|png)");
+		});
+		for (File out : outputFiles) {
+			File expected = new File(expectedFolder, out.getName());
+			System.out.print("Checking " + out.getName() + "...");
+			assertTrue(out.getName() + " did not result as expected", compareFiles(out, expected));
+			System.out.println("Ok");
+		}
+		*/
+		
+		System.out.println("> IccTransformer.transform(File, ICC_Profile) finished.");				
+	}
+	
 	
 	/**
 	 * Checks if two files have identical byte content.

@@ -486,7 +486,16 @@ public class IccTransformer {
 			
 			// Perform transformation
 			icctransform.transform(in, out, pixels);
-						
+			
+			// Recover transparency data
+			if (transparency) {
+				for (int y=0; y<image.getHeight(); y++) {
+					for (int x=0; x<image.getWidth(); x++) {
+						out[(y*image.getWidth() + x) * 4] = in[(y*image.getWidth() + x) * 4];
+					}
+				}				
+			}
+			
 		} finally {
 			// Dispose all native resources
 			if (icctransform != null) icctransform.dispose();	
