@@ -80,6 +80,13 @@ task jni(type:Exec) {
 
 tasks.processResources.dependsOn jni
 
+task zipsrc(type: Zip) {
+	from 'src/main/java'
+	include '**/*.java'
+	archiveName 'src.zip'
+	destinationDir(file('/build'))
+}
+
 clean {
 	delete headers.destFile
 	delete jni.libMainDir

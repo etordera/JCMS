@@ -10,6 +10,7 @@ import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.Arrays;
 import java.util.Enumeration;
@@ -30,6 +31,10 @@ import java.util.jar.JarFile;
  */
 public class JCMS {
 
+	/** Version number for JCMS library. */
+	private static final String VERSION = "1.0";
+	/** Name of system property for native library path. */
+	private static final String PROPERTY_LIBRARY_PATH = "JCMS_library_path";
 	/** Path to temp dir where native libraries are extracted to during runtime */
 	private static String m_tempDir = null;
 
@@ -40,6 +45,21 @@ public class JCMS {
 			System.loadLibrary("jcms");
 			
 		} catch (UnsatisfiedLinkError e) {
+
+			// Detect custom path for extracting native libraries
+			Path libDir = null;
+			String libraryPath = System.getProperty(PROPERTY_LIBRARY_PATH);
+			if (libraryPath != null) {
+				libDir = Paths.get(libraryPath);
+				if (!Files.isDirectory(libDir)) {
+					try {
+						Files.createDirectories(libDir);
+					} catch (Exception ex) {
+						System.err.println("Unable to create library directory: " + libraryPath);
+						libDir = null;
+					}
+				}
+			}
 			
 			// Get libraries from classpath resources
 			String basePath = "com/gmail/etordera/jcms/lib/"+getPlatform();
@@ -47,31 +67,39 @@ public class JCMS {
 
 			try {
 				// Prepare temp directory for extracted resources
-				Path tempDir = Files.createTempDirectory("jcmstmp");
-				m_tempDir = tempDir.toFile().getAbsolutePath();
-				tempDir.toFile().deleteOnExit();
+				boolean tempFiles = false;
+				if (libDir == null) {
+					libDir = Files.createTempDirectory("jcmstmp");
+					tempFiles = true;
+				}
 				
-				// Windows: Make sure temp dir is deleted on JVM exit
-				if (getPlatform().contains("windows")) {
-					Runtime.getRuntime().addShutdownHook(new Thread() {
-						public void run() {
-							try {
-								String[] cmdArray = {
-										"cmd", "/c", "ping", "-n", "5", "127.0.0.1",
-										"&", "cmd", "/c", "del", m_tempDir+"\\*.dll",
-										"&", "cmd", "/c", "rmdir", m_tempDir
-								};
-								Runtime.getRuntime().exec(cmdArray);
-								
-							} catch (IOException e) {
-								System.out.println("IOException: "+e.getMessage());
+				// Delete temp files on exit
+				if (tempFiles) {
+					libDir.toFile().deleteOnExit();
+
+					// Windows: Make sure temp dir is deleted on JVM exit
+					if (getPlatform().contains("windows")) {
+						m_tempDir = libDir.toFile().getAbsolutePath();
+						Runtime.getRuntime().addShutdownHook(new Thread() {
+							public void run() {
+								try {
+									String[] cmdArray = {
+											"cmd", "/c", "ping", "-n", "5", "127.0.0.1",
+											"&", "cmd", "/c", "del", m_tempDir+"\\*.dll",
+											"&", "cmd", "/c", "rmdir", m_tempDir
+									};
+									Runtime.getRuntime().exec(cmdArray);
+									
+								} catch (IOException e) {
+									System.out.println("IOException: "+e.getMessage());
+								}
 							}
-						}
-					});					
+						});					
+					}
 				}
 							
 				// Try to load libraries from classpath resources
-				if (!loadSharedObjects(basePath, new LinkedList<String>(Arrays.asList(libs)), tempDir)) {
+				if (!loadSharedObjects(basePath, new LinkedList<String>(Arrays.asList(libs)), libDir, tempFiles)) {
 					throw new UnsatisfiedLinkError("Failed to load JCMS native libraries.");
 				}
 
@@ -86,10 +114,12 @@ public class JCMS {
 	 * 
 	 * @param basePath Base path in classpath where shared objects are stored
 	 * @param soNames Names of shared objects to load from classpath
-	 * @param tempDir Temporary directory to be used for extraction
+	 * @param outDir Directory to be used for extraction
+	 * @param tempFiles <code>true</code> for temporary extraction (files deleted on JVM exit). <code>false</code>
+	 * for persistent extraction (files are not deleted).
 	 * @return <code>true</code> on success, <code>false</code> on error
 	 */
-	private static boolean loadSharedObjects(String basePath, List<String> soNames, Path tempDir) {
+	private static boolean loadSharedObjects(String basePath, List<String> soNames, Path outDir, boolean tempFiles) {
 		Iterator<String> it = soNames.iterator();
 		boolean someFailed = false;
 		boolean someLoaded = false;
@@ -98,15 +128,17 @@ public class JCMS {
 			try {
 				// Extract shared object to temp file
 				InputStream in = JCMS.class.getClassLoader().getResourceAsStream(basePath+"/"+soName);
-				File tempFile = new File(tempDir.toFile().getAbsolutePath()+"/"+soName);
-				Files.copy(in, tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+				File outFile = new File(outDir.toFile().getAbsolutePath()+"/"+soName);
+				Files.copy(in, outFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
 				in.close();
 
 				// Load library from temp file
-				System.load(tempFile.getAbsolutePath());
+				System.load(outFile.getAbsolutePath());
 
 				// Register temp file deletion
-				tempFile.deleteOnExit();
+				if (tempFiles) {
+					outFile.deleteOnExit();
+				}
 				
 				// Delete from list
 				it.remove();
@@ -122,7 +154,7 @@ public class JCMS {
 		
 		// Recursive call manages loading order dependencies
 		if (someLoaded && someFailed) {
-			return loadSharedObjects(basePath, soNames, tempDir);
+			return loadSharedObjects(basePath, soNames, outDir, tempFiles);
 		}
 		
 		return someLoaded;
@@ -211,7 +243,15 @@ public class JCMS {
 	}
 	
 	
+	/**
+	 * Gets JCMS library version string.
+	 * @return JCMS library version string.
+	 */
+	public static String getVersion() {
+		return VERSION;
+	}
 	
+
 	// ---------------------------------------------------------------
 	// Constants: Rendering intents for color transformations
 	// ---------------------------------------------------------------
