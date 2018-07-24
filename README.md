@@ -16,6 +16,11 @@ Once prerequisites are met, launch the build with:
     
 This will generate the library as **JCMS.jar** inside *build/libs* directory.
 
+## Native libraries
+Native libraries are embedded into the **JCMS.jar** and are automatically extracted to a temporary folder when needed. When the JVM exits, the temporary folder is deleted.
+
+You can force the directory for extraction of native libraries with the system property **JCMS_library_path** (add the parameter -DJCMS_library_path=/path/to/libs when launching the JVM). Custom directory for native libraries is not automatically deleted.
+
 ## Javadoc
 
 For detailed information on the classes of JCMS consult the [javadoc](http://etordera.github.io/JCMS/javadoc/index.html).
